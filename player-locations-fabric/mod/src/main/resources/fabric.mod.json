@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "playerlocations",
+  "version": "${version}",
+  "name": "Player Locations",
+  "description": "Sends online player locations to a website.",
+  "authors": ["You"],
+  "environment": "server",
+  "entrypoints": {
+    "server": ["com.example.playerlocations.PlayerLocationsMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.1",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}

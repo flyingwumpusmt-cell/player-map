@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Who's online</title>
+<style>
+  :root {
+    --bg: #1b2a1f;
+    --panel: #243528;
+    --grid: #2f4434;
+    --text: #e8efe4;
+    --muted: #93a894;
+    --pin: #ffd24a;
+    --bad: #ff8a6b;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px;
+  }
+  @media (max-width: 720px) { body { grid-template-columns: 1fr; } }
+  aside { background: var(--panel); border-radius: 10px; padding: 16px; }
+  h1 { font-size: 1.25rem; margin: 0 0 4px; }
+  #status { color: var(--muted); font-size: .9rem; margin-bottom: 14px; }
+  #status.offline { color: var(--bad); }
+  select { width: 100%; padding: 8px; margin-bottom: 12px; background: var(--bg); color: var(--text);
+           border: 1px solid var(--grid); border-radius: 6px; font: inherit; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: 8px 0; border-top: 1px solid var(--grid); }
+  li b { display: block; }
+  li span { color: var(--muted); font-size: .85rem; }
+  .empty { color: var(--muted); padding: 8px 0; }
+  main { background: var(--panel); border-radius: 10px; min-height: 360px; position: relative; }
+  canvas { width: 100%; height: 100%; display: block; position: absolute; inset: 0; }
+  :focus-visible { outline: 2px solid var(--pin); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Who's online</h1>
+  <div id="status">Connecting…</div>
+  <label for="world" class="sr" style="position:absolute;left:-9999px">World</label>
+  <select id="world"></select>
+  <ul id="list"></ul>
+</aside>
+<main><canvas id="map" aria-label="Top-down map of player positions"></canvas></main>
+
+<script>
+const statusEl = document.getElementById("status");
+const worldSel = document.getElementById("world");
+const listEl = document.getElementById("list");
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+let players = [];
+
+function fmtWorld(w) {
+  const names = {
+    "minecraft:overworld": "Overworld", "minecraft:the_nether": "Nether", "minecraft:the_end": "The End",
+    "world": "Overworld", "world_nether": "Nether", "world_the_end": "The End"
+  };
+  return names[w] || w;
+}
+
+function render() {
+  const world = worldSel.value;
+  const here = players.filter(p => p.world === world);
+
+  listEl.replaceChildren();
+  if (!here.length) {
+    const d = document.createElement("div");
+    d.className = "empty"; d.textContent = "Nobody in this world.";
+    listEl.append(d);
+  }
+  for (const p of here) {
+    const li = document.createElement("li");
+    const b = document.createElement("b"); b.textContent = p.name;
+    const s = document.createElement("span"); s.textContent = `X ${p.x}  Y ${p.y}  Z ${p.z}`;
+    li.append(b, s); listEl.append(li);
+  }
+
+  // canvas
+  const r = canvas.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, r.width, r.height);
+
+  const pad = 50;
+  let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+  if (here.length) {
+    minX = Math.min(...here.map(p => p.x)); maxX = Math.max(...here.map(p => p.x));
+    minZ = Math.min(...here.map(p => p.z)); maxZ = Math.max(...here.map(p => p.z));
+  }
+  const span = Math.max(maxX - minX, maxZ - minZ, 100) * 1.4;
+  const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  const scale = (Math.min(r.width, r.height) - pad) / span;
+  const toX = x => r.width / 2 + (x - cx) * scale;
+  const toY = z => r.height / 2 + (z - cz) * scale;
+
+  // grid every N blocks
+  const step = [10, 25, 50, 100, 250, 500, 1000, 5000].find(s => s * scale >= 40) || 10000;
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid");
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted");
+  ctx.lineWidth = 1; ctx.font = "11px system-ui";
+  for (let x = Math.ceil((cx - r.width / 2 / scale) / step) * step; toX(x) < r.width; x += step) {
+    ctx.beginPath(); ctx.moveTo(toX(x), 0); ctx.lineTo(toX(x), r.height); ctx.stroke();
+    ctx.fillText(x, toX(x) + 3, 12);
+  }
+  for (let z = Math.ceil((cz - r.height / 2 / scale) / step) * step; toY(z) < r.height; z += step) {
+    ctx.beginPath(); ctx.moveTo(0, toY(z)); ctx.lineTo(r.width, toY(z)); ctx.stroke();
+    ctx.fillText(z, 3, toY(z) - 3);
+  }
+
+  ctx.font = "600 13px system-ui";
+  for (const p of here) {
+    const x = toX(p.x), y = toY(p.z);
+    ctx.fillStyle = "#ffd24a";
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#e8efe4";
+    ctx.fillText(p.name, x + 10, y + 4);
+  }
+}
+
+function updateWorlds() {
+  const worlds = [...new Set(players.map(p => p.world))];
+  if (!worlds.length) worlds.push("minecraft:overworld");
+  const current = worldSel.value;
+  worldSel.replaceChildren(...worlds.map(w => {
+    const o = document.createElement("option"); o.value = w; o.textContent = fmtWorld(w); return o;
+  }));
+  worldSel.value = worlds.includes(current) ? current : worlds[0];
+}
+
+async function poll() {
+  try {
+    const d = await (await fetch("/api/players", { cache: "no-store" })).json();
+    const age = (d.now - d.updatedAt) / 1000;
+    if (!d.updatedAt || age > 30) {
+      statusEl.textContent = d.updatedAt ? "Server looks offline (no update in " + Math.round(age) + "s)" : "Waiting for the server…";
+      statusEl.className = "offline"; players = [];
+    } else {
+      players = d.players;
+      statusEl.textContent = players.length + (players.length === 1 ? " player online" : " players online");
+      statusEl.className = "";
+    }
+  } catch {
+    statusEl.textContent = "Can't reach the website."; statusEl.className = "offline";
+  }
+  updateWorlds(); render();
+}
+
+worldSel.addEventListener("change", render);
+addEventListener("resize", render);
+poll(); setInterval(poll, 3000);
+</script>
+</body>
+</html>
